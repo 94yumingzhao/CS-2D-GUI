@@ -1,0 +1,81 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 24,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CPLEX_DIR": "D:/CPLEX",
+                "CMAKE_PREFIX_PATH": "D:/Tools-DV/Qt/6.10.1/msvc2022_64"
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "base",
+            "displayName": "Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "inherits": "base",
+            "displayName": "Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vs2022-debug",
+            "displayName": "VS2022 Debug",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
+            "binaryDir": "${sourceDir}/build/vs2022",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CPLEX_DIR": "D:/CPLEX",
+                "CMAKE_PREFIX_PATH": "D:/Tools-DV/Qt/6.10.1/msvc2022_64"
+            }
+        },
+        {
+            "name": "vs2022-release",
+            "displayName": "VS2022 Release",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
+            "binaryDir": "${sourceDir}/build/vs2022",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CPLEX_DIR": "D:/CPLEX",
+                "CMAKE_PREFIX_PATH": "D:/Tools-DV/Qt/6.10.1/msvc2022_64"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "vs2022-debug",
+            "configurePreset": "vs2022-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vs2022-release",
+            "configurePreset": "vs2022-release",
+            "configuration": "Release"
+        }
+    ]
+}
