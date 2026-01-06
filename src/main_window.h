@@ -7,16 +7,21 @@
 #include <QThread>
 #include <QString>
 
+struct GeneratorConfig;
 class ParameterWidget;
 class ResultsWidget;
 class LogWidget;
-class CuttingViewDialog;
+class GeneratorWidget;
+class CuttingViewWidget;
 class SolverWorker;
+class GeneratorWorker;
 class QLineEdit;
 class QLabel;
 class QPushButton;
-class QProgressBar;
 class QGroupBox;
+class QTabWidget;
+class QSpinBox;
+class QComboBox;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -27,73 +32,95 @@ public:
 
 signals:
     void StartSolver();
+    void StartGeneration();
 
 private slots:
+    // Solver tab
     void OnBrowseFile();
     void OnStartSolve();
     void OnCancelSolve();
     void OnExportJson();
-    void OnViewCutting();
 
-    // Worker 信号槽
+    // Cutting view tab
+    void OnLoadSolution();
+    void OnPrevStock();
+    void OnNextStock();
+    void OnZoomChanged(int index);
+
+    // Solver worker signals
     void OnDataLoaded(int numItemTypes, int stockWidth, int stockLength, int totalDemand);
-    void OnStageStarted(int stage, const QString& name);
-    void OnStageProgress(int stage, int percent, double elapsed);
-    void OnStageCompleted(int stage, double value, double runtime);
     void OnSolveFinished(bool success, const QString& message);
-    void OnLogMessage(const QString& message);
+    void OnSolverLogMessage(const QString& message);
     void OnSolutionReady(const QString& jsonPath);
     void OnResultsReady(int optimalValue, double rootLB, double gap,
                         int nodeCount, double utilization);
+
+    // Generator widget signal
+    void OnGenerateRequested(const GeneratorConfig& config);
+
+    // Generator worker signals
+    void OnGenerationStarted(int count);
+    void OnInstanceGenerated(int index, const QString& filename);
+    void OnGenerationFinished(bool success, const QString& message,
+                              const QStringList& files);
+    void OnGeneratorLogMessage(const QString& message);
 
 private:
     void SetupUi();
     void SetupMenuBar();
     void SetupConnections();
-    void UpdateUiState(bool is_running);
-    void ResetProgress();
+    void UpdateSolverUiState(bool is_running);
+    void UpdateCuttingNavigation();
 
-    // 文件选择
+    QWidget* CreateSolverTab();
+    QWidget* CreateGeneratorTab();
+    QWidget* CreateCuttingTab();
+
+    // Tab widget
+    QTabWidget* tab_widget_;
+
+    // ========== Solver Tab ==========
     QGroupBox* file_group_;
     QPushButton* browse_button_;
     QLineEdit* file_path_edit_;
     QLabel* file_info_label_;
 
-    // 参数设置
     ParameterWidget* param_widget_;
 
-    // 控制按钮
     QPushButton* start_button_;
     QPushButton* cancel_button_;
     QLabel* status_label_;
 
-    // 进度显示 (5个阶段)
-    QGroupBox* progress_group_;
-    QLabel* stage_labels_[5];
-    QProgressBar* progress_bars_[5];
-    QLabel* time_labels_[5];
-
-    // 结果和日志
     ResultsWidget* results_widget_;
-    LogWidget* log_widget_;
-
-    // 切割方案可视化对话框
-    CuttingViewDialog* cutting_view_dialog_;
-
-    // 底部按钮
     QPushButton* export_json_button_;
-    QPushButton* view_cutting_button_;
-    QLabel* total_time_label_;
 
-    // Worker 线程
-    QThread* worker_thread_;
+    LogWidget* solver_log_widget_;
+
+    // ========== Generator Tab ==========
+    GeneratorWidget* generator_widget_;
+    LogWidget* generator_log_widget_;
+
+    // ========== Cutting View Tab ==========
+    QPushButton* load_solution_button_;
+    QLineEdit* solution_path_edit_;
+    QPushButton* prev_stock_button_;
+    QLabel* stock_nav_label_;
+    QPushButton* next_stock_button_;
+    QComboBox* zoom_combo_;
+    CuttingViewWidget* cutting_view_widget_;
+
+    // ========== Workers ==========
+    QThread* solver_thread_;
     SolverWorker* solver_worker_;
+    QThread* generator_thread_;
+    GeneratorWorker* generator_worker_;
 
-    // 状态
+    // ========== State ==========
     bool is_running_;
     QString current_file_path_;
     QString current_json_path_;
-    double total_runtime_;
+    int current_stock_index_;
+    int total_stock_count_;
 };
 
 #endif  // MAIN_WINDOW_H_

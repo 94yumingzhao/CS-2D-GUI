@@ -1,28 +1,36 @@
-// solver_worker.cpp - 后台求解线程实现
+// solver_worker.cpp - Background Solver Worker (Subprocess) Implementation
 
 #include "solver_worker.h"
-#include "2DBP.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
-#include <QDateTime>
-#include <filesystem>
+#include <QRegularExpression>
+#include <QTextStream>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 SolverWorker::SolverWorker(QObject* parent)
     : QObject(parent)
     , time_limit_(60)
-    , sp1_method_(kArcFlow)
-    , sp2_method_(kArcFlow)
+    , sp1_method_(1)  // kArcFlow
+    , sp2_method_(1)  // kArcFlow
+    , solver_process_(nullptr)
+    , log_reader_(nullptr)
+    , log_file_pos_(0)
     , cancel_requested_(false)
-    , params_(nullptr)
-    , data_(nullptr)
-    , root_node_(nullptr) {
+    , current_stage_(-1)
+    , stage_start_time_(0.0) {
 }
 
 SolverWorker::~SolverWorker() {
-    delete params_;
-    delete data_;
-    delete root_node_;
+    if (solver_process_) {
+        solver_process_->kill();
+        solver_process_->waitForFinished(1000);
+        delete solver_process_;
+    }
+    delete log_reader_;
 }
 
 void SolverWorker::SetDataPath(const QString& path) {
@@ -41,8 +49,27 @@ void SolverWorker::SetSP2Method(int method) {
     sp2_method_ = method;
 }
 
-void SolverWorker::RequestCancel() {
-    cancel_requested_ = true;
+QString SolverWorker::GetSolverExePath() const {
+    QString app_dir = QCoreApplication::applicationDirPath();
+
+    // Try relative paths from GUI build directory
+    // GUI: D:/YM-Code/CS-2D-GUI/build/vs2022/bin/Release/
+    // Solver: D:/YM-Code/CS-2D-BP-Arc/build/release/bin/Release/
+    QStringList possible_paths = {
+        app_dir + "/../../../../CS-2D-BP-Arc/build/release/bin/Release/CS-2D-BP-Arc.exe",
+        app_dir + "/../../../CS-2D-BP-Arc/build/release/bin/Release/CS-2D-BP-Arc.exe",
+        app_dir + "/../../CS-2D-BP-Arc/build/release/bin/Release/CS-2D-BP-Arc.exe",
+        "D:/YM-Code/CS-2D-BP-Arc/build/release/bin/Release/CS-2D-BP-Arc.exe"
+    };
+
+    for (const QString& path : possible_paths) {
+        QFileInfo fi(path);
+        if (fi.exists()) {
+            return fi.absoluteFilePath();
+        }
+    }
+
+    return "D:/YM-Code/CS-2D-BP-Arc/build/release/bin/Release/CS-2D-BP-Arc.exe";
 }
 
 QString SolverWorker::GetLatestSolutionPath() const {
@@ -57,194 +84,296 @@ QString SolverWorker::GetLatestSolutionPath() const {
     return files.first().absoluteFilePath();
 }
 
+void SolverWorker::RequestCancel() {
+    cancel_requested_ = true;
+    if (solver_process_ && solver_process_->state() != QProcess::NotRunning) {
+        solver_process_->kill();
+    }
+}
+
 void SolverWorker::RunSolver() {
     cancel_requested_ = false;
+    current_stage_ = -1;
+    stage_start_time_ = 0.0;
 
-    // 清理并重新分配数据结构
-    delete params_;
-    delete data_;
-    delete root_node_;
-    params_ = new ProblemParams();
-    data_ = new ProblemData();
-    root_node_ = new BPNode();
+    QString exe_path = GetSolverExePath();
+    QFileInfo exe_info(exe_path);
 
-    try {
-        // 创建输出目录
-        std::filesystem::create_directories("logs");
-        std::filesystem::create_directories("results");
+    if (!exe_info.exists()) {
+        emit LogMessage(QString::fromUtf8("Error: Solver not found: %1").arg(exe_path));
+        emit SolveFinished(false, QString::fromUtf8("Solver executable not found"));
+        return;
+    }
 
-        // 设置参数
-        params_->time_limit_ = time_limit_;
-        params_->sp1_method_ = sp1_method_;
-        params_->sp2_method_ = sp2_method_;
-        params_->start_time_ = std::chrono::steady_clock::now();
-        root_node_->id_ = 1;
+    emit LogMessage(QString::fromUtf8("Solver: %1").arg(exe_path));
+    emit LogMessage(QString::fromUtf8("Data: %1").arg(data_path_));
 
-        //===========================================
-        // 阶段 0: 数据读取
-        //===========================================
-        emit StageStarted(0, QString::fromUtf8("数据读取"));
-        emit LogMessage(QString::fromUtf8("开始读取数据文件..."));
-        auto t0 = std::chrono::steady_clock::now();
+    // Create results directory for solver output
+    QDir().mkpath("results");
+    QDir().mkpath("logs");
 
-        auto [status, num_items, num_strips] = LoadInput(*params_, *data_, data_path_.toStdString());
-        if (status != 0) {
-            emit LogMessage(QString::fromUtf8("数据读取失败"));
-            emit SolveFinished(false, QString::fromUtf8("数据读取失败"));
-            return;
+    // Build command line arguments
+    QStringList args;
+    args << "-f" << data_path_;
+    if (time_limit_ > 0) {
+        args << "-t" << QString::number(time_limit_);
+    }
+
+    emit LogMessage(QString::fromUtf8("Args: %1").arg(args.join(" ")));
+
+    // Create and configure process
+    if (solver_process_) {
+        delete solver_process_;
+    }
+    solver_process_ = new QProcess(this);
+
+    // Set working directory to solver's directory for output files
+    solver_process_->setWorkingDirectory(exe_info.absolutePath());
+
+    connect(solver_process_, &QProcess::readyReadStandardOutput,
+            this, &SolverWorker::OnProcessOutput);
+    connect(solver_process_, &QProcess::readyReadStandardError,
+            this, &SolverWorker::OnProcessError);
+    connect(solver_process_, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &SolverWorker::OnProcessFinished);
+
+    // Start log file reader
+    log_file_path_ = exe_info.absolutePath() + "/logs";
+    log_file_pos_ = 0;
+
+    if (log_reader_) {
+        log_reader_->stop();
+        delete log_reader_;
+    }
+    log_reader_ = new QTimer(this);
+    connect(log_reader_, &QTimer::timeout, this, &SolverWorker::OnReadLogFile);
+    log_reader_->start(500);
+
+    // Start the solver process
+    solver_process_->start(exe_path, args);
+
+    if (!solver_process_->waitForStarted(5000)) {
+        emit LogMessage(QString::fromUtf8("Error: Failed to start solver process"));
+        emit SolveFinished(false, QString::fromUtf8("Failed to start solver"));
+        return;
+    }
+
+    emit LogMessage(QString::fromUtf8("Solver process started (PID: %1)")
+                    .arg(solver_process_->processId()));
+
+    // Emit initial stage
+    emit StageStarted(0, QString::fromUtf8("Data Loading"));
+}
+
+void SolverWorker::OnProcessOutput() {
+    // stdout is typically not used for progress in CS-2D-BP-Arc
+    if (!solver_process_) return;
+
+    QByteArray data = solver_process_->readAllStandardOutput();
+    QString output = QString::fromUtf8(data);
+
+    QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        emit LogMessage(QString::fromUtf8("[stdout] %1").arg(line.trimmed()));
+    }
+}
+
+void SolverWorker::OnProcessError() {
+    if (!solver_process_) return;
+
+    QByteArray data = solver_process_->readAllStandardError();
+    QString output = QString::fromUtf8(data);
+
+    // Parse progress messages from stderr
+    QStringList lines = output.split('\n', Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        ParseProgressLine(line.trimmed());
+    }
+}
+
+void SolverWorker::OnProcessFinished(int exitCode, QProcess::ExitStatus status) {
+    // Stop log reader
+    if (log_reader_) {
+        log_reader_->stop();
+    }
+
+    // Read any remaining log content
+    OnReadLogFile();
+
+    if (cancel_requested_) {
+        emit SolveFinished(false, QString::fromUtf8("Cancelled by user"));
+        return;
+    }
+
+    if (status == QProcess::CrashExit) {
+        emit LogMessage(QString::fromUtf8("Solver process crashed"));
+        emit SolveFinished(false, QString::fromUtf8("Solver crashed"));
+        return;
+    }
+
+    if (exitCode != 0) {
+        emit LogMessage(QString::fromUtf8("Solver exited with code %1").arg(exitCode));
+        emit SolveFinished(false, QString::fromUtf8("Solver failed (exit code %1)").arg(exitCode));
+        return;
+    }
+
+    // Find and parse the solution JSON
+    QString solver_dir = QFileInfo(GetSolverExePath()).absolutePath();
+    QDir results_dir(solver_dir + "/results");
+
+    if (results_dir.exists()) {
+        QStringList filters;
+        filters << "solution_*.json";
+        QFileInfoList files = results_dir.entryInfoList(filters, QDir::Files, QDir::Time);
+
+        if (!files.isEmpty()) {
+            QString json_path = files.first().absoluteFilePath();
+            emit SolutionReady(json_path);
+            emit LogMessage(QString::fromUtf8("Solution exported: %1").arg(json_path));
+            ParseResultsFromJson(json_path);
         }
+    }
 
-        // 生成 Arc Flow 网络 (如果需要)
-        if (sp1_method_ == kArcFlow || sp2_method_ == kArcFlow) {
-            emit LogMessage(QString::fromUtf8("生成 Arc Flow 网络..."));
-            GenerateAllArcs(*data_, *params_);
+    emit LogMessage(QString::fromUtf8("Solver completed successfully"));
+    emit SolveFinished(true, QString::fromUtf8("Completed"));
+}
+
+void SolverWorker::OnReadLogFile() {
+    // Find latest log file in logs directory
+    QString solver_dir = QFileInfo(GetSolverExePath()).absolutePath();
+    QDir logs_dir(solver_dir + "/logs");
+
+    if (!logs_dir.exists()) return;
+
+    QStringList filters;
+    filters << "log_2DBP_Arc_*.log";
+    QFileInfoList files = logs_dir.entryInfoList(filters, QDir::Files, QDir::Time);
+
+    if (files.isEmpty()) return;
+
+    QString log_path = files.first().absoluteFilePath();
+
+    // Track if this is a new file
+    static QString last_log_path;
+    if (log_path != last_log_path) {
+        last_log_path = log_path;
+        log_file_pos_ = 0;
+    }
+
+    QFile file(log_path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+
+    file.seek(log_file_pos_);
+
+    QTextStream in(&file);
+    in.setEncoding(QStringConverter::Utf8);
+
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        if (!line.isEmpty()) {
+            emit LogMessage(line);
         }
+    }
 
-        auto t0_end = std::chrono::steady_clock::now();
-        double t0_sec = std::chrono::duration<double>(t0_end - t0).count();
+    log_file_pos_ = file.pos();
+    file.close();
+}
 
-        emit DataLoaded(params_->num_item_types_,
-                        params_->stock_width_,
-                        params_->stock_length_,
-                        num_items);
-        emit LogMessage(QString::fromUtf8("子板类型: %1, 母板尺寸: %2 x %3")
-            .arg(params_->num_item_types_)
-            .arg(params_->stock_width_)
-            .arg(params_->stock_length_));
-        emit StageCompleted(0, num_items, t0_sec);
+void SolverWorker::ParseProgressLine(const QString& line) {
+    // Parse PROGRESS output from CS-2D-BP-Arc stderr
+    // Format: "[elapsed] message"
+    // Examples:
+    // "[  0.001s] Start | CS-2D-BP-Arc | inst_xxx.csv | time:60s"
+    // "[  0.010s] Data | 5 types | stock:500x300"
+    // "[  0.050s] CG   | converged LP=3.45 (fractional)"
+    // "[ 15.234s] Done | optimal=4 Gap=0.0% nodes=12"
 
-        if (cancel_requested_) {
-            emit SolveFinished(false, QString::fromUtf8("用户取消"));
-            return;
+    emit LogMessage(line);
+
+    // Extract elapsed time and message
+    static QRegularExpression re_progress(R"(\[\s*(\d+\.?\d*)s?\]\s*(.+))");
+    QRegularExpressionMatch match = re_progress.match(line);
+
+    if (!match.hasMatch()) return;
+
+    double elapsed = match.captured(1).toDouble();
+    QString message = match.captured(2);
+
+    // Parse different message types
+    if (message.contains(QString::fromUtf8("Data")) || message.contains(QString::fromUtf8("数据"))) {
+        // Data loaded
+        static QRegularExpression re_data(R"((\d+)\s*(?:种子板|types).*?(\d+)\s*x\s*(\d+))");
+        QRegularExpressionMatch data_match = re_data.match(message);
+        if (data_match.hasMatch()) {
+            int num_types = data_match.captured(1).toInt();
+            int width = data_match.captured(2).toInt();
+            int length = data_match.captured(3).toInt();
+            emit DataLoaded(num_types, width, length, 0);
+            emit StageCompleted(0, num_types, elapsed);
+            emit StageStarted(1, QString::fromUtf8("Heuristic"));
         }
+    } else if (message.contains("CG") || message.contains(QString::fromUtf8("列生成"))) {
+        // Column generation progress
+        if (message.contains("LP=") || message.contains(QString::fromUtf8("收敛"))) {
+            static QRegularExpression re_lp(R"(LP=(\d+\.?\d*))");
+            QRegularExpressionMatch lp_match = re_lp.match(message);
+            if (lp_match.hasMatch()) {
+                double lp_value = lp_match.captured(1).toDouble();
+                emit StageCompleted(2, lp_value, elapsed);
 
-        //===========================================
-        // 阶段 1: 启发式生成初始解
-        //===========================================
-        emit StageStarted(1, QString::fromUtf8("启发式初始解"));
-        emit LogMessage(QString::fromUtf8("生成启发式初始解..."));
-        auto t1 = std::chrono::steady_clock::now();
-
-        RunHeuristic(*params_, *data_, *root_node_);
-
-        auto t1_end = std::chrono::steady_clock::now();
-        double t1_sec = std::chrono::duration<double>(t1_end - t1).count();
-        emit LogMessage(QString::fromUtf8("启发式完成, 初始解: %1 块母板")
-            .arg(static_cast<int>(params_->global_best_int_)));
-        emit StageCompleted(1, params_->global_best_int_, t1_sec);
-
-        if (cancel_requested_) {
-            emit SolveFinished(false, QString::fromUtf8("用户取消"));
-            return;
-        }
-
-        //===========================================
-        // 阶段 2: 根节点列生成
-        //===========================================
-        emit StageStarted(2, QString::fromUtf8("根节点列生成"));
-        emit LogMessage(QString::fromUtf8("开始列生成求解..."));
-        auto t2 = std::chrono::steady_clock::now();
-
-        SolveRootCG(*params_, *data_, *root_node_);
-        params_->root_lb_ = root_node_->lower_bound_;
-
-        auto t2_end = std::chrono::steady_clock::now();
-        double t2_sec = std::chrono::duration<double>(t2_end - t2).count();
-        emit LogMessage(QString::fromUtf8("列生成收敛, LP下界: %1")
-            .arg(root_node_->lower_bound_, 0, 'f', 4));
-        emit StageCompleted(2, root_node_->lower_bound_, t2_sec);
-
-        if (cancel_requested_) {
-            emit SolveFinished(false, QString::fromUtf8("用户取消"));
-            return;
-        }
-
-        //===========================================
-        // 阶段 3: 整数性检查
-        //===========================================
-        emit StageStarted(3, QString::fromUtf8("整数性检查"));
-        auto t3 = std::chrono::steady_clock::now();
-
-        bool is_integer = IsIntegerSolution(root_node_->solution_);
-
-        auto t3_end = std::chrono::steady_clock::now();
-        double t3_sec = std::chrono::duration<double>(t3_end - t3).count();
-        emit StageCompleted(3, is_integer ? 1.0 : 0.0, t3_sec);
-
-        if (is_integer) {
-            // LP解为整数，直接输出
-            emit LogMessage(QString::fromUtf8("根节点解为整数解，无需分支"));
-            params_->global_best_int_ = root_node_->solution_.obj_val_;
-            params_->global_best_y_cols_ = root_node_->solution_.y_columns_;
-            params_->global_best_x_cols_ = root_node_->solution_.x_columns_;
-            params_->gap_ = 0.0;
-            params_->node_counter_ = 1;
-
-            // 跳过分支定价阶段
-            emit StageCompleted(4, 0, 0);
-        } else {
-            //===========================================
-            // 阶段 4: 分支定价
-            //===========================================
-            emit StageStarted(4, QString::fromUtf8("分支定价"));
-            emit LogMessage(QString::fromUtf8("LP解非整数，开始分支定价..."));
-            auto t4 = std::chrono::steady_clock::now();
-
-            RunBranchAndPrice(*params_, *data_, root_node_);
-
-            auto t4_end = std::chrono::steady_clock::now();
-            double t4_sec = std::chrono::duration<double>(t4_end - t4).count();
-            emit LogMessage(QString::fromUtf8("分支定价完成, 节点数: %1")
-                .arg(params_->node_counter_));
-            emit StageCompleted(4, params_->global_best_int_, t4_sec);
-        }
-
-        // 导出解到 JSON
-        if (params_->global_best_int_ < 1e10) {
-            ExportSolution(*params_, *data_);
-            QString json_path = GetLatestSolutionPath();
-            if (!json_path.isEmpty()) {
-                emit SolutionReady(json_path);
-                emit LogMessage(QString::fromUtf8("解已导出: %1").arg(json_path));
+                if (message.contains(QString::fromUtf8("分数")) || message.contains("fractional")) {
+                    emit StageStarted(4, QString::fromUtf8("Branch & Price"));
+                } else {
+                    emit StageCompleted(3, 1.0, 0);
+                    emit StageCompleted(4, 0.0, 0);
+                }
             }
         }
-
-        // 计算总利用率
-        double total_item_area = 0;
-        for (int i = 0; i < params_->num_item_types_; i++) {
-            total_item_area += data_->item_types_[i].width_ *
-                              data_->item_types_[i].length_ *
-                              data_->item_types_[i].demand_;
+    } else if (message.contains(QString::fromUtf8("完成")) || message.contains("Done")) {
+        // Completed
+        static QRegularExpression re_done(R"((?:最优|optimal)=(\d+).*?Gap=(\d+\.?\d*)%.*?nodes=(\d+))");
+        QRegularExpressionMatch done_match = re_done.match(message);
+        if (done_match.hasMatch()) {
+            int optimal = done_match.captured(1).toInt();
+            double gap = done_match.captured(2).toDouble() / 100.0;
+            int nodes = done_match.captured(3).toInt();
+            emit StageCompleted(4, optimal, elapsed);
         }
-        int num_plates = static_cast<int>(params_->global_best_int_);
-        double total_stock_area = num_plates * params_->stock_width_ * params_->stock_length_;
-        double utilization = (total_stock_area > 0) ? (total_item_area / total_stock_area) : 0.0;
+    } else if (message.contains(QString::fromUtf8("启发式")) || message.contains("Heuristic")) {
+        emit StageCompleted(1, 0, elapsed);
+        emit StageStarted(2, QString::fromUtf8("Root Node CG"));
+    }
+}
 
-        // 发送结果
-        emit ResultsReady(
-            num_plates,
-            params_->root_lb_,
-            params_->gap_,
-            params_->node_counter_,
-            utilization
-        );
+void SolverWorker::ParseResultsFromJson(const QString& jsonPath) {
+    QFile file(jsonPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        emit LogMessage(QString::fromUtf8("Cannot open solution file: %1").arg(jsonPath));
+        return;
+    }
 
-        // 计算总耗时
-        double elapsed_sec = GetElapsedTime(*params_);
-        emit LogMessage(QString::fromUtf8("总耗时: %1 秒").arg(elapsed_sec, 0, 'f', 3));
+    QByteArray data = file.readAll();
+    file.close();
 
-        // 完成
-        if (params_->is_timeout_) {
-            emit SolveFinished(true, QString::fromUtf8("求解完成 (超时终止)"));
-        } else {
-            emit SolveFinished(true, QString::fromUtf8("求解完成"));
-        }
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(data, &error);
+    if (error.error != QJsonParseError::NoError) {
+        emit LogMessage(QString::fromUtf8("JSON parse error: %1").arg(error.errorString()));
+        return;
+    }
 
-    } catch (const std::exception& e) {
-        emit LogMessage(QString("Error: %1").arg(e.what()));
-        emit SolveFinished(false, QString("Error: %1").arg(e.what()));
-    } catch (...) {
-        emit LogMessage("Unknown error");
-        emit SolveFinished(false, "Unknown error");
+    QJsonObject root = doc.object();
+
+    // Parse summary
+    if (root.contains("summary")) {
+        QJsonObject summary = root["summary"].toObject();
+
+        int num_plates = summary["num_plates"].toInt();
+        double root_lb = summary["root_lb"].toDouble();
+        double gap = summary["gap"].toDouble();
+        int node_count = summary["node_count"].toInt(1);
+        double utilization = summary["total_utilization"].toDouble();
+
+        emit ResultsReady(num_plates, root_lb, gap, node_count, utilization);
     }
 }

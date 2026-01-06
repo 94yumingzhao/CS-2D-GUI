@@ -8,6 +8,7 @@
 class QSpinBox;
 class QComboBox;
 class QPushButton;
+class QToolButton;
 
 class ParameterWidget : public QGroupBox {
     Q_OBJECT
@@ -22,8 +23,14 @@ public:
 public slots:
     void ResetDefaults();
 
+private slots:
+    void OnHelpButtonClicked();
+
 private:
     void SetupUi();
+    QToolButton* CreateHelpButton(const QString& tooltip,
+                                  const QString& detail_title,
+                                  const QString& detail_content);
 
     QSpinBox* time_limit_spin_;
     QComboBox* sp1_method_combo_;
