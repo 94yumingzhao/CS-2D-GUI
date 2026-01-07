@@ -50,6 +50,7 @@ signals:
 public slots:
     void ShowPrevPlate();
     void ShowNextPlate();
+    void ShowPlate(int index);
 
 protected:
     void paintEvent(QPaintEvent* event) override;

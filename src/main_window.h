@@ -9,6 +9,7 @@
 
 struct GeneratorConfig;
 class ParameterWidget;
+class CplexParamWidget;
 class ResultsWidget;
 class LogWidget;
 class GeneratorWidget;
@@ -46,6 +47,7 @@ private slots:
     void OnPrevStock();
     void OnNextStock();
     void OnZoomChanged(int index);
+    void OnPlateSelected(int index);
 
     // Solver worker signals
     void OnDataLoaded(int numItemTypes, int stockWidth, int stockLength, int totalDemand);
@@ -94,6 +96,7 @@ private:
     ResultsWidget* results_widget_;
     QPushButton* export_json_button_;
 
+    CplexParamWidget* cplex_param_widget_;
     LogWidget* solver_log_widget_;
 
     // ========== Generator Tab ==========
@@ -103,10 +106,7 @@ private:
     // ========== Cutting View Tab ==========
     QPushButton* load_solution_button_;
     QLineEdit* solution_path_edit_;
-    QPushButton* prev_stock_button_;
-    QLabel* stock_nav_label_;
-    QPushButton* next_stock_button_;
-    QComboBox* zoom_combo_;
+    QComboBox* plate_combo_;
     CuttingViewWidget* cutting_view_widget_;
 
     // ========== Workers ==========

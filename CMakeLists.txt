@@ -64,6 +64,7 @@ set(GUI_SOURCES
     src/generator_widget.cpp
     src/generator_worker.cpp
     src/difficulty_mapper.cpp
+    src/cplex_param_widget.cpp
 )
 
 set(GUI_HEADERS
@@ -76,6 +77,7 @@ set(GUI_HEADERS
     src/generator_widget.h
     src/generator_worker.h
     src/difficulty_mapper.h
+    src/cplex_param_widget.h
 )
 
 qt_add_executable(CS-2D-GUI

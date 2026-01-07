@@ -127,8 +127,9 @@ void SolverWorker::RunSolver() {
     }
     solver_process_ = new QProcess(this);
 
-    // Set working directory to solver's directory for output files
-    solver_process_->setWorkingDirectory(exe_info.absolutePath());
+    // Set working directory to project root for output files (logs/, results/)
+    QString project_root = "D:/YM-Code/CS-2D-BP-Arc";
+    solver_process_->setWorkingDirectory(project_root);
 
     connect(solver_process_, &QProcess::readyReadStandardOutput,
             this, &SolverWorker::OnProcessOutput);
@@ -138,7 +139,7 @@ void SolverWorker::RunSolver() {
             this, &SolverWorker::OnProcessFinished);
 
     // Start log file reader
-    log_file_path_ = exe_info.absolutePath() + "/logs";
+    log_file_path_ = project_root + "/logs";
     log_file_pos_ = 0;
 
     if (log_reader_) {
@@ -179,15 +180,10 @@ void SolverWorker::OnProcessOutput() {
 }
 
 void SolverWorker::OnProcessError() {
-    if (!solver_process_) return;
-
-    QByteArray data = solver_process_->readAllStandardError();
-    QString output = QString::fromUtf8(data);
-
-    // Parse progress messages from stderr
-    QStringList lines = output.split('\n', Qt::SkipEmptyParts);
-    for (const QString& line : lines) {
-        ParseProgressLine(line.trimmed());
+    // 日志已通过日志文件读取，不再从stderr读取，避免重复显示
+    // 只消费数据防止缓冲区满
+    if (solver_process_) {
+        solver_process_->readAllStandardError();
     }
 }
 
@@ -239,9 +235,8 @@ void SolverWorker::OnProcessFinished(int exitCode, QProcess::ExitStatus status) 
 }
 
 void SolverWorker::OnReadLogFile() {
-    // Find latest log file in logs directory
-    QString solver_dir = QFileInfo(GetSolverExePath()).absolutePath();
-    QDir logs_dir(solver_dir + "/logs");
+    // Find latest log file in logs directory (project root)
+    QDir logs_dir(log_file_path_);
 
     if (!logs_dir.exists()) return;
 

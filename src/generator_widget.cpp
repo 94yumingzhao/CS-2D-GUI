@@ -32,13 +32,18 @@ void GeneratorWidget::SetupUi() {
     main_layout->setSpacing(8);
     main_layout->setContentsMargins(8, 8, 8, 8);
 
-    // Mode selector
+    // Mode selector - two buttons
     auto* mode_layout = new QHBoxLayout();
     mode_layout->addWidget(new QLabel(QString::fromUtf8("模式:")));
-    mode_combo_ = new QComboBox();
-    mode_combo_->addItem(QString::fromUtf8("快速"));
-    mode_combo_->addItem(QString::fromUtf8("手动"));
-    mode_layout->addWidget(mode_combo_);
+    quick_mode_btn_ = new QPushButton(QString::fromUtf8("快速"));
+    quick_mode_btn_->setCheckable(true);
+    quick_mode_btn_->setChecked(true);
+    quick_mode_btn_->setFixedWidth(60);
+    manual_mode_btn_ = new QPushButton(QString::fromUtf8("手动"));
+    manual_mode_btn_->setCheckable(true);
+    manual_mode_btn_->setFixedWidth(60);
+    mode_layout->addWidget(quick_mode_btn_);
+    mode_layout->addWidget(manual_mode_btn_);
     mode_layout->addStretch();
     main_layout->addLayout(mode_layout);
 
@@ -368,7 +373,9 @@ void GeneratorWidget::SetupManualModeUi(QGroupBox* group) {
 }
 
 void GeneratorWidget::SetupConnections() {
-    connect(mode_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    connect(quick_mode_btn_, &QPushButton::clicked,
+            this, &GeneratorWidget::OnModeChanged);
+    connect(manual_mode_btn_, &QPushButton::clicked,
             this, &GeneratorWidget::OnModeChanged);
 
     connect(difficulty_button_group_, &QButtonGroup::idClicked,
@@ -397,7 +404,17 @@ void GeneratorWidget::SetupConnections() {
 }
 
 void GeneratorWidget::OnModeChanged() {
-    bool quick = (mode_combo_->currentIndex() == 0);
+    // Toggle buttons - ensure only one is checked
+    QPushButton* sender_btn = qobject_cast<QPushButton*>(sender());
+    if (sender_btn == quick_mode_btn_) {
+        quick_mode_btn_->setChecked(true);
+        manual_mode_btn_->setChecked(false);
+    } else {
+        quick_mode_btn_->setChecked(false);
+        manual_mode_btn_->setChecked(true);
+    }
+
+    bool quick = quick_mode_btn_->isChecked();
     quick_group_->setVisible(quick);
     manual_group_->setVisible(!quick);
     UpdatePreview();
@@ -460,7 +477,7 @@ void GeneratorWidget::UpdatePreview() {
 GeneratorConfig GeneratorWidget::GetConfig() const {
     GeneratorConfig config;
 
-    if (mode_combo_->currentIndex() == 0) {
+    if (quick_mode_btn_->isChecked()) {
         // Quick mode - use presets
         int diff_id = difficulty_button_group_->checkedId();
         int scale_id = scale_button_group_->checkedId();

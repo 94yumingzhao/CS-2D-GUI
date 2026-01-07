@@ -33,9 +33,8 @@ QString GeneratorWorker::GetGeneratorExePath() const {
     // Try common locations
     QStringList candidates = {
         app_dir + "/CS-2D-Data.exe",
-        app_dir + "/../../../CS-2D-Data/build/release/bin/Release/CS-2D-Data.exe",
-        "D:/YM-Code/CS-2D-Data/build/release/bin/Release/CS-2D-Data.exe",
-        "D:/YM-Code/CS-2D-Data/build/release/bin/Debug/CS-2D-Data.exe"
+        "D:/YM-Code/CS-2D-Data/build/release/Release/CS-2D-Data.exe",
+        "D:/YM-Code/CS-2D-Data/build/release/Debug/CS-2D-Data.exe"
     };
 
     for (const QString& path : candidates) {
@@ -71,12 +70,6 @@ QStringList GeneratorWorker::BuildCommandArgs() const {
     // Advanced options
     if (config_.prime_offset) {
         args << "--prime-offset";
-    }
-    if (config_.num_clusters > 0) {
-        args << "--clusters" << QString::number(config_.num_clusters);
-    }
-    if (config_.peak_ratio > 0.0) {
-        args << "--peak-ratio" << QString::number(config_.peak_ratio, 'f', 2);
     }
 
     // Strategy

@@ -7,6 +7,7 @@
 #include <QString>
 
 class QTextEdit;
+class QPushButton;
 
 class LogWidget : public QGroupBox {
     Q_OBJECT
@@ -24,6 +25,7 @@ private:
     QString GetTimestamp() const;
 
     QTextEdit* text_edit_;
+    QPushButton* clear_btn_;
 };
 
 #endif  // LOG_WIDGET_H_

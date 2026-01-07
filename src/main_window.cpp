@@ -2,6 +2,7 @@
 
 #include "main_window.h"
 #include "parameter_widget.h"
+#include "cplex_param_widget.h"
 #include "results_widget.h"
 #include "log_widget.h"
 #include "cutting_view_widget.h"
@@ -76,33 +77,55 @@ void MainWindow::SetupUi() {
 
 QWidget* MainWindow::CreateSolverTab() {
     auto* tab = new QWidget();
-    auto* splitter = new QSplitter(Qt::Horizontal, tab);
+    auto* main_layout = new QVBoxLayout(tab);
+    main_layout->setSpacing(8);
+    main_layout->setContentsMargins(8, 8, 8, 8);
 
-    // ========== Left Panel (Controls) ==========
-    auto* left_panel = new QWidget();
-    auto* left_layout = new QVBoxLayout(left_panel);
-    left_layout->setSpacing(8);
-    left_layout->setContentsMargins(8, 8, 8, 8);
+    // ========== Top Row: File Selection + CPLEX Params (aligned) ==========
+    auto* top_row = new QWidget();
+    auto* top_layout = new QHBoxLayout(top_row);
+    top_layout->setSpacing(8);
+    top_layout->setContentsMargins(0, 0, 0, 0);
 
-    // File selection group
-    file_group_ = new QGroupBox(QString::fromUtf8("文件选择"), left_panel);
+    // File selection group (left)
+    file_group_ = new QGroupBox(QString::fromUtf8("文件选择"), top_row);
     auto* file_layout = new QVBoxLayout(file_group_);
 
     auto* browse_layout = new QHBoxLayout();
-    browse_button_ = new QPushButton(QString::fromUtf8("浏览..."), left_panel);
+    browse_button_ = new QPushButton(QString::fromUtf8("浏览..."), top_row);
     browse_button_->setFixedWidth(80);
-    file_path_edit_ = new QLineEdit(left_panel);
+    file_path_edit_ = new QLineEdit(top_row);
     file_path_edit_->setReadOnly(true);
     file_path_edit_->setPlaceholderText(QString::fromUtf8("选择算例文件..."));
     browse_layout->addWidget(browse_button_);
     browse_layout->addWidget(file_path_edit_);
 
-    file_info_label_ = new QLabel(QString::fromUtf8("子板类型: --  母板: -- x --"), left_panel);
+    file_info_label_ = new QLabel(QString::fromUtf8("子板类型: --  母板: -- x --"), top_row);
     file_info_label_->setStyleSheet("color: gray;");
 
     file_layout->addLayout(browse_layout);
     file_layout->addWidget(file_info_label_);
-    left_layout->addWidget(file_group_);
+    file_group_->setFixedWidth(300);
+    top_layout->addWidget(file_group_);
+
+    // CPLEX parameters widget (right, aligned with file selection)
+    cplex_param_widget_ = new CplexParamWidget(top_row);
+    top_layout->addWidget(cplex_param_widget_, 1);
+
+    main_layout->addWidget(top_row);
+
+    // ========== Bottom Row: Params/Controls + Log (aligned with top row) ==========
+    auto* bottom_row = new QWidget();
+    auto* bottom_layout = new QHBoxLayout(bottom_row);
+    bottom_layout->setSpacing(8);
+    bottom_layout->setContentsMargins(0, 0, 0, 0);
+
+    // Left panel (params, controls, results) - fixed width to align with file_group_
+    auto* left_panel = new QWidget();
+    left_panel->setFixedWidth(300);
+    auto* left_layout = new QVBoxLayout(left_panel);
+    left_layout->setSpacing(8);
+    left_layout->setContentsMargins(0, 0, 0, 0);
 
     // Parameters widget
     param_widget_ = new ParameterWidget(left_panel);
@@ -137,20 +160,13 @@ QWidget* MainWindow::CreateSolverTab() {
     left_layout->addWidget(export_json_button_);
 
     left_layout->addStretch();
+    bottom_layout->addWidget(left_panel);
 
-    // ========== Right Panel (Log) ==========
+    // Right panel (log, aligned with cplex_param_widget_)
     solver_log_widget_ = new LogWidget();
+    bottom_layout->addWidget(solver_log_widget_, 1);
 
-    // Add to splitter
-    splitter->addWidget(left_panel);
-    splitter->addWidget(solver_log_widget_);
-    splitter->setStretchFactor(0, 0);  // Left: fixed
-    splitter->setStretchFactor(1, 1);  // Right: stretch
-    splitter->setSizes({320, 680});
-
-    auto* tab_layout = new QVBoxLayout(tab);
-    tab_layout->setContentsMargins(0, 0, 0, 0);
-    tab_layout->addWidget(splitter);
+    main_layout->addWidget(bottom_row, 1);
 
     return tab;
 }
@@ -195,6 +211,12 @@ QWidget* MainWindow::CreateCuttingTab() {
     solution_path_edit_->setReadOnly(true);
     solution_path_edit_->setPlaceholderText(QString::fromUtf8("选择 JSON 解文件..."));
     control_layout->addWidget(solution_path_edit_, 1);
+
+    control_layout->addWidget(new QLabel(QString::fromUtf8("母板:")));
+    plate_combo_ = new QComboBox(tab);
+    plate_combo_->setMinimumWidth(100);
+    plate_combo_->setEnabled(false);
+    control_layout->addWidget(plate_combo_);
 
     layout->addLayout(control_layout);
 
@@ -242,6 +264,8 @@ void MainWindow::SetupConnections() {
 
     // Cutting view tab connections
     connect(load_solution_button_, &QPushButton::clicked, this, &MainWindow::OnLoadSolution);
+    connect(plate_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::OnPlateSelected);
 
     // Setup solver worker thread
     solver_thread_ = new QThread(this);
@@ -294,6 +318,20 @@ void MainWindow::UpdateSolverUiState(bool is_running) {
 void MainWindow::UpdateCuttingNavigation() {
     total_stock_count_ = cutting_view_widget_->GetPlateCount();
     current_stock_index_ = cutting_view_widget_->GetCurrentPlateIndex();
+
+    // Update plate combo box
+    plate_combo_->blockSignals(true);
+    plate_combo_->clear();
+    for (int i = 0; i < total_stock_count_; i++) {
+        plate_combo_->addItem(QString::fromUtf8("母板 %1").arg(i + 1));
+    }
+    if (total_stock_count_ > 0) {
+        plate_combo_->setCurrentIndex(current_stock_index_);
+        plate_combo_->setEnabled(true);
+    } else {
+        plate_combo_->setEnabled(false);
+    }
+    plate_combo_->blockSignals(false);
 }
 
 // ============================================================================
@@ -470,8 +508,8 @@ void MainWindow::OnGeneratorLogMessage(const QString& message) {
 void MainWindow::OnLoadSolution() {
     QString path = QFileDialog::getOpenFileName(this,
         QString::fromUtf8("加载切割方案"),
-        "D:/YM-Code/CS-2D-BP-Arc",
-        QString::fromUtf8("JSON 文件 (*.json);;所有文件 (*)"));
+        "D:/YM-Code/CS-2D-BP-Arc/results",
+        QString::fromUtf8("所有文件 (*);;JSON 文件 (*.json)"));
 
     if (!path.isEmpty()) {
         if (cutting_view_widget_->LoadSolution(path)) {
@@ -498,4 +536,9 @@ void MainWindow::OnNextStock() {
 void MainWindow::OnZoomChanged(int index) {
     // Reserved for zoom functionality
     Q_UNUSED(index);
+}
+
+void MainWindow::OnPlateSelected(int index) {
+    cutting_view_widget_->ShowPlate(index);
+    current_stock_index_ = index;
 }

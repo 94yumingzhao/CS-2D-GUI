@@ -143,6 +143,15 @@ void CuttingViewWidget::ShowNextPlate() {
     }
 }
 
+void CuttingViewWidget::ShowPlate(int index) {
+    if (index >= 0 && index < static_cast<int>(plates_.size())) {
+        current_plate_index_ = index;
+        UpdateNavigation();
+        update();
+        emit PlateChanged(current_plate_index_, static_cast<int>(plates_.size()));
+    }
+}
+
 void CuttingViewWidget::UpdateNavigation() {
     int total = static_cast<int>(plates_.size());
 

@@ -55,7 +55,8 @@ private:
                                    const QString& detail_content);
 
     // Mode selection
-    QComboBox* mode_combo_;
+    QPushButton* quick_mode_btn_;
+    QPushButton* manual_mode_btn_;
 
     // Quick mode widgets
     QGroupBox* quick_group_;
