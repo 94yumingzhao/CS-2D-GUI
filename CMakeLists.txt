@@ -24,16 +24,16 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Output directories
+# Output directories (固定输出目录, 不按配置分子目录)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
     string(TOUPPER ${CONFIG} CONFIG_UPPER)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONFIG_UPPER} ${CMAKE_BINARY_DIR}/bin/${CONFIG})
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CONFIG_UPPER} ${CMAKE_BINARY_DIR}/lib/${CONFIG})
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CONFIG_UPPER} ${CMAKE_BINARY_DIR}/lib/${CONFIG})
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONFIG_UPPER} ${CMAKE_BINARY_DIR}/bin)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CONFIG_UPPER} ${CMAKE_BINARY_DIR}/lib)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CONFIG_UPPER} ${CMAKE_BINARY_DIR}/lib)
 endforeach()
 
 #---------------------------------------
@@ -65,6 +65,7 @@ set(GUI_SOURCES
     src/generator_worker.cpp
     src/difficulty_mapper.cpp
     src/cplex_param_widget.cpp
+    src/analysis_widget.cpp
 )
 
 set(GUI_HEADERS
@@ -78,6 +79,7 @@ set(GUI_HEADERS
     src/generator_worker.h
     src/difficulty_mapper.h
     src/cplex_param_widget.h
+    src/analysis_widget.h
 )
 
 qt_add_executable(CS-2D-GUI
@@ -92,7 +94,7 @@ target_link_libraries(CS-2D-GUI PRIVATE
 
 set_target_properties(CS-2D-GUI PROPERTIES
     WIN32_EXECUTABLE TRUE
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 #---------------------------------------

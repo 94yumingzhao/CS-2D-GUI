@@ -1,3 +1,11 @@
+// ============================================================================
+// 工程标准 (Engineering Standards)
+// - 坐标系: 左下角为原点
+// - 宽度(Width): 上下方向 (Y轴)
+// - 长度(Length): 左右方向 (X轴)
+// - 约束: 长度 >= 宽度
+// ============================================================================
+
 // main_window.cpp - 主窗口实现
 
 #include "main_window.h"
@@ -6,6 +14,7 @@
 #include "results_widget.h"
 #include "log_widget.h"
 #include "cutting_view_widget.h"
+#include "analysis_widget.h"
 #include "solver_worker.h"
 #include "generator_widget.h"
 #include "generator_worker.h"
@@ -62,11 +71,12 @@ void MainWindow::SetupUi() {
     main_layout->setSpacing(0);
     main_layout->setContentsMargins(0, 0, 0, 0);
 
-    // Tab widget for 3 tabs
+    // Tab widget for 4 tabs
     tab_widget_ = new QTabWidget(this);
     tab_widget_->addTab(CreateSolverTab(), QString::fromUtf8("求解器"));
     tab_widget_->addTab(CreateGeneratorTab(), QString::fromUtf8("算例生成"));
     tab_widget_->addTab(CreateCuttingTab(), QString::fromUtf8("切割方案"));
+    tab_widget_->addTab(CreateAnalysisTab(), QString::fromUtf8("求解分析"));
     main_layout->addWidget(tab_widget_);
 
     setCentralWidget(central);
@@ -227,6 +237,11 @@ QWidget* MainWindow::CreateCuttingTab() {
     return tab;
 }
 
+QWidget* MainWindow::CreateAnalysisTab() {
+    analysis_widget_ = new AnalysisWidget();
+    return analysis_widget_;
+}
+
 void MainWindow::SetupMenuBar() {
     auto* file_menu = menuBar()->addMenu(QString::fromUtf8("文件(&F)"));
 
@@ -365,6 +380,7 @@ void MainWindow::OnStartSolve() {
     // Reset state
     results_widget_->ClearResults();
     solver_log_widget_->ClearLog();
+    solver_log_widget_->StartTimer();
     current_json_path_.clear();
 
     UpdateSolverUiState(true);
@@ -420,6 +436,7 @@ void MainWindow::OnDataLoaded(int numItemTypes, int stockWidth, int stockLength,
 }
 
 void MainWindow::OnSolveFinished(bool success, const QString& message) {
+    solver_log_widget_->StopTimer();
     UpdateSolverUiState(false);
 
     if (success) {

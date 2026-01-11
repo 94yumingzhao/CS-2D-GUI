@@ -1,3 +1,11 @@
+// ============================================================================
+// 工程标准 (Engineering Standards)
+// - 坐标系: 左下角为原点
+// - 宽度(Width): 上下方向 (Y轴)
+// - 长度(Length): 左右方向 (X轴)
+// - 约束: 长度 >= 宽度
+// ============================================================================
+
 // main_window.h - 主窗口声明
 
 #ifndef MAIN_WINDOW_H_
@@ -14,6 +22,7 @@ class ResultsWidget;
 class LogWidget;
 class GeneratorWidget;
 class CuttingViewWidget;
+class AnalysisWidget;
 class SolverWorker;
 class GeneratorWorker;
 class QLineEdit;
@@ -77,6 +86,7 @@ private:
     QWidget* CreateSolverTab();
     QWidget* CreateGeneratorTab();
     QWidget* CreateCuttingTab();
+    QWidget* CreateAnalysisTab();
 
     // Tab widget
     QTabWidget* tab_widget_;
@@ -108,6 +118,9 @@ private:
     QLineEdit* solution_path_edit_;
     QComboBox* plate_combo_;
     CuttingViewWidget* cutting_view_widget_;
+
+    // ========== Analysis Tab ==========
+    AnalysisWidget* analysis_widget_;
 
     // ========== Workers ==========
     QThread* solver_thread_;
