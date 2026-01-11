@@ -108,6 +108,15 @@ QGroupBox* AnalysisWidget::CreateSummaryGroup() {
     objective_label_ = new QLabel("-");
     layout->addWidget(objective_label_, row++, 1);
 
+    layout->addWidget(new QLabel(QString::fromUtf8("启发式上界:")), row, 0);
+    heuristic_label_ = new QLabel("-");
+    layout->addWidget(heuristic_label_, row++, 1);
+
+    layout->addWidget(new QLabel(QString::fromUtf8("改进:")), row, 0);
+    improvement_label_ = new QLabel("-");
+    improvement_label_->setStyleSheet("color: green;");
+    layout->addWidget(improvement_label_, row++, 1);
+
     layout->addWidget(new QLabel(QString::fromUtf8("根节点下界:")), row, 0);
     root_lb_label_ = new QLabel("-");
     layout->addWidget(root_lb_label_, row++, 1);
@@ -151,8 +160,7 @@ QGroupBox* AnalysisWidget::CreateTimeBreakdownGroup() {
         QString::fromUtf8("耗时(秒)"),
         QString::fromUtf8("占比")
     });
-    time_table_->horizontalHeader()->setStretchLastSection(true);
-    time_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    time_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     time_table_->setSelectionMode(QAbstractItemView::NoSelection);
     time_table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     time_table_->setMaximumHeight(180);
@@ -179,8 +187,7 @@ QGroupBox* AnalysisWidget::CreateConvergenceGroup() {
         QString::fromUtf8("下界"),
         QString::fromUtf8("上界")
     });
-    convergence_table_->horizontalHeader()->setStretchLastSection(true);
-    convergence_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    convergence_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     convergence_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     convergence_table_->setSelectionMode(QAbstractItemView::SingleSelection);
     convergence_table_->setAlternatingRowColors(true);
@@ -234,8 +241,7 @@ QGroupBox* AnalysisWidget::CreateNodeTableGroup() {
         QString::fromUtf8("CG迭代"),
         QString::fromUtf8("列数(Y/X)")
     });
-    node_table_->horizontalHeader()->setStretchLastSection(true);
-    node_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    node_table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     node_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     node_table_->setSelectionMode(QAbstractItemView::SingleSelection);
     node_table_->setAlternatingRowColors(true);
@@ -314,6 +320,8 @@ void AnalysisWidget::ClearAnalysisData() {
 
     solve_status_label_->setText("-");
     objective_label_->setText("-");
+    heuristic_label_->setText("-");
+    improvement_label_->setText("-");
     root_lb_label_->setText("-");
     final_lb_label_->setText("-");
     gap_label_->setText("-");
@@ -348,7 +356,23 @@ void AnalysisWidget::UpdateSummary(const QJsonObject& summary, const QJsonObject
         solve_status_label_->setStyleSheet("font-weight: bold;");
     }
 
-    objective_label_->setText(QString::number(summary["objective_value"].toDouble(), 'f', 2));
+    double objective = summary["objective_value"].toDouble();
+    double heuristic = summary["heuristic_value"].toDouble();
+
+    objective_label_->setText(QString::number(objective, 'f', 0));
+
+    if (heuristic > 0 && heuristic < 1e9) {
+        heuristic_label_->setText(QString::number(heuristic, 'f', 0));
+        double improvement = heuristic - objective;
+        double improvement_rate = (improvement / heuristic) * 100;
+        improvement_label_->setText(QString::fromUtf8("%1 (%2%)")
+            .arg(improvement, 0, 'f', 0)
+            .arg(improvement_rate, 0, 'f', 1));
+    } else {
+        heuristic_label_->setText("-");
+        improvement_label_->setText("-");
+    }
+
     root_lb_label_->setText(QString::number(summary["root_lb"].toDouble(), 'f', 2));
     final_lb_label_->setText(QString::number(summary["final_lb"].toDouble(), 'f', 2));
     gap_label_->setText(QString::number(summary["gap"].toDouble() * 100, 'f', 2) + "%");
@@ -409,7 +433,17 @@ void AnalysisWidget::UpdateConvergenceTable(const QJsonArray& convergence) {
         double ub = ev["ub"].toDouble(-1);
 
         convergence_table_->setItem(row, 0, new QTableWidgetItem(QString::number(time, 'f', 2)));
-        convergence_table_->setItem(row, 1, new QTableWidgetItem(event));
+
+        // 事件名称中文化
+        QString event_zh = event;
+        if (event == "integer_found") event_zh = QString::fromUtf8("找到整数解");
+        else if (event == "root_done") event_zh = QString::fromUtf8("根节点完成");
+        else if (event == "new_ub") event_zh = QString::fromUtf8("更新上界");
+        else if (event == "new_lb") event_zh = QString::fromUtf8("更新下界");
+        else if (event == "pruned") event_zh = QString::fromUtf8("剪枝");
+        else if (event == "start") event_zh = QString::fromUtf8("开始");
+        else if (event == "end") event_zh = QString::fromUtf8("结束");
+        convergence_table_->setItem(row, 1, new QTableWidgetItem(event_zh));
         convergence_table_->setItem(row, 2, new QTableWidgetItem(
             node_id >= 0 ? QString::number(node_id) : "-"));
         convergence_table_->setItem(row, 3, new QTableWidgetItem(
@@ -495,9 +529,30 @@ void AnalysisWidget::FilterNodeTable() {
         node_table_->setItem(row, 2, new QTableWidgetItem(QString::number(node.depth)));
         node_table_->setItem(row, 3, new QTableWidgetItem(
             node.lower_bound >= 0 ? QString::number(node.lower_bound, 'f', 2) : "-"));
-        node_table_->setItem(row, 4, new QTableWidgetItem(node.status));
-        node_table_->setItem(row, 5, new QTableWidgetItem(node.branch_type));
-        node_table_->setItem(row, 6, new QTableWidgetItem(node.branch_dir));
+
+        // 状态中文化
+        QString status_zh = node.status;
+        if (node.status == "branched") status_zh = QString::fromUtf8("已分支");
+        else if (node.status == "pruned") status_zh = QString::fromUtf8("已剪枝");
+        else if (node.status == "infeasible") status_zh = QString::fromUtf8("不可行");
+        else if (node.status == "integer") status_zh = QString::fromUtf8("整数解");
+        else if (node.status == "active") status_zh = QString::fromUtf8("活跃");
+        else if (node.status == "processed") status_zh = QString::fromUtf8("已处理");
+        node_table_->setItem(row, 4, new QTableWidgetItem(status_zh));
+
+        // 分支类型中文化
+        QString branch_zh = node.branch_type;
+        if (node.branch_type == "sp1_arc") branch_zh = QString::fromUtf8("SP1弧");
+        else if (node.branch_type == "sp2_arc") branch_zh = QString::fromUtf8("SP2弧");
+        else if (node.branch_type == "none" || node.branch_type.isEmpty()) branch_zh = "-";
+        node_table_->setItem(row, 5, new QTableWidgetItem(branch_zh));
+
+        // 方向中文化
+        QString dir_zh = node.branch_dir;
+        if (node.branch_dir == "left") dir_zh = QString::fromUtf8("左");
+        else if (node.branch_dir == "right") dir_zh = QString::fromUtf8("右");
+        else if (node.branch_dir.isEmpty()) dir_zh = "-";
+        node_table_->setItem(row, 6, new QTableWidgetItem(dir_zh));
         node_table_->setItem(row, 7, new QTableWidgetItem(QString::number(node.cg_iterations)));
         node_table_->setItem(row, 8, new QTableWidgetItem(
             QString("%1/%2").arg(node.final_y_cols).arg(node.final_x_cols)));

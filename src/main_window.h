@@ -53,10 +53,6 @@ private slots:
 
     // Cutting view tab
     void OnLoadSolution();
-    void OnPrevStock();
-    void OnNextStock();
-    void OnZoomChanged(int index);
-    void OnPlateSelected(int index);
 
     // Solver worker signals
     void OnDataLoaded(int numItemTypes, int stockWidth, int stockLength, int totalDemand);
@@ -81,7 +77,6 @@ private:
     void SetupMenuBar();
     void SetupConnections();
     void UpdateSolverUiState(bool is_running);
-    void UpdateCuttingNavigation();
 
     QWidget* CreateSolverTab();
     QWidget* CreateGeneratorTab();
@@ -116,7 +111,6 @@ private:
     // ========== Cutting View Tab ==========
     QPushButton* load_solution_button_;
     QLineEdit* solution_path_edit_;
-    QComboBox* plate_combo_;
     CuttingViewWidget* cutting_view_widget_;
 
     // ========== Analysis Tab ==========
@@ -132,8 +126,6 @@ private:
     bool is_running_;
     QString current_file_path_;
     QString current_json_path_;
-    int current_stock_index_;
-    int total_stock_count_;
 };
 
 #endif  // MAIN_WINDOW_H_

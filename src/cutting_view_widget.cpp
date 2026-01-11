@@ -1,3 +1,11 @@
+// ============================================================================
+// 工程标准 (Engineering Standards)
+// - 坐标系: 左下角为原点
+// - 宽度(Width): 上下方向 (Y轴)
+// - 长度(Length): 左右方向 (X轴)
+// - 约束: 长度 >= 宽度
+// ============================================================================
+
 // cutting_view_widget.cpp - 切割方案可视化组件实现
 
 #include "cutting_view_widget.h"
@@ -6,6 +14,7 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QLabel>
+#include <QComboBox>
 #include <QPainter>
 #include <QFile>
 #include <QJsonDocument>
@@ -13,6 +22,7 @@
 #include <QJsonArray>
 #include <QFileInfo>
 #include <algorithm>
+#include <set>
 
 CuttingViewWidget::CuttingViewWidget(QWidget* parent)
     : QWidget(parent)
@@ -33,9 +43,11 @@ void CuttingViewWidget::SetupUi() {
     prev_button_->setEnabled(false);
     connect(prev_button_, &QPushButton::clicked, this, &CuttingViewWidget::ShowPrevPlate);
 
-    plate_index_label_ = new QLabel("0 / 0", this);
-    plate_index_label_->setAlignment(Qt::AlignCenter);
-    plate_index_label_->setMinimumWidth(80);
+    plate_combo_ = new QComboBox(this);
+    plate_combo_->setMinimumWidth(120);
+    plate_combo_->setEnabled(false);
+    connect(plate_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &CuttingViewWidget::OnPlateComboChanged);
 
     next_button_ = new QPushButton(">", this);
     next_button_->setFixedWidth(40);
@@ -46,7 +58,7 @@ void CuttingViewWidget::SetupUi() {
     utilization_label_->setAlignment(Qt::AlignRight);
 
     nav_layout->addWidget(prev_button_);
-    nav_layout->addWidget(plate_index_label_);
+    nav_layout->addWidget(plate_combo_);
     nav_layout->addWidget(next_button_);
     nav_layout->addStretch();
     nav_layout->addWidget(utilization_label_);
@@ -93,6 +105,20 @@ bool CuttingViewWidget::LoadSolution(const QString& json_path) {
         plate.plate_id = plate_obj["plate_id"].toInt();
         plate.utilization = plate_obj["utilization"].toDouble();
 
+        // 读取条带信息
+        QJsonArray strips_array = plate_obj["strips"].toArray();
+        for (const auto& strip_val : strips_array) {
+            QJsonObject strip_obj = strip_val.toObject();
+
+            StripRect strip;
+            strip.strip_id = strip_obj["strip_id"].toInt();
+            strip.y = strip_obj["y"].toInt();
+            strip.width = strip_obj["width"].toInt();
+
+            plate.strips.push_back(strip);
+        }
+
+        // 读取子板信息
         QJsonArray items_array = plate_obj["items"].toArray();
         for (const auto& item_val : items_array) {
             QJsonObject item_obj = item_val.toObject();
@@ -103,6 +129,7 @@ bool CuttingViewWidget::LoadSolution(const QString& json_path) {
             item.y = item_obj["y"].toInt();
             item.width = item_obj["width"].toInt();
             item.length = item_obj["length"].toInt();
+            item.strip_id = item_obj["strip_id"].toInt(-1);  // 兼容旧格式
 
             plate.items.push_back(item);
         }
@@ -158,15 +185,35 @@ void CuttingViewWidget::UpdateNavigation() {
     prev_button_->setEnabled(current_plate_index_ > 0);
     next_button_->setEnabled(current_plate_index_ < total - 1);
 
+    // 更新下拉框 (阻止信号循环)
+    plate_combo_->blockSignals(true);
+    if (plate_combo_->count() != total) {
+        plate_combo_->clear();
+        for (int i = 0; i < total; i++) {
+            plate_combo_->addItem(QString::fromUtf8("母板 %1/%2").arg(i + 1).arg(total));
+        }
+    }
     if (total > 0) {
-        plate_index_label_->setText(QString("%1 / %2")
-            .arg(current_plate_index_ + 1)
-            .arg(total));
+        plate_combo_->setCurrentIndex(current_plate_index_);
+        plate_combo_->setEnabled(true);
         utilization_label_->setText(QString::fromUtf8("利用率: %1%")
             .arg(plates_[current_plate_index_].utilization * 100, 0, 'f', 1));
     } else {
-        plate_index_label_->setText("0 / 0");
+        plate_combo_->setEnabled(false);
         utilization_label_->setText(QString::fromUtf8("利用率: --"));
+    }
+    plate_combo_->blockSignals(false);
+}
+
+void CuttingViewWidget::OnPlateComboChanged(int index) {
+    if (index >= 0 && index < static_cast<int>(plates_.size())) {
+        current_plate_index_ = index;
+        prev_button_->setEnabled(current_plate_index_ > 0);
+        next_button_->setEnabled(current_plate_index_ < static_cast<int>(plates_.size()) - 1);
+        utilization_label_->setText(QString::fromUtf8("利用率: %1%")
+            .arg(plates_[current_plate_index_].utilization * 100, 0, 'f', 1));
+        update();
+        emit PlateChanged(current_plate_index_, static_cast<int>(plates_.size()));
     }
 }
 
@@ -263,6 +310,75 @@ void CuttingViewWidget::DrawPlate(QPainter& painter, const PlateData& plate, con
             painter.drawText(item_rect, Qt::AlignCenter, label);
         }
     }
+
+    // ===== 绘制两阶段切割轨迹 =====
+    // 关闭抗锯齿以获得锐利的像素级线条
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    constexpr int kLineWidth = 3;
+    constexpr int kLineHalfWidth = (kLineWidth + 1) / 2;  // = 2
+
+    // 收集红线Y位置 (用于蓝线避让)
+    std::set<int> red_line_model_y;
+
+    // 第一阶段切割线 (水平红线，分隔条带)
+    if (!plate.strips.empty()) {
+        QPen red_pen(QColor(200, 50, 50), kLineWidth, Qt::SolidLine);
+        red_pen.setCapStyle(Qt::FlatCap);
+        painter.setPen(red_pen);
+
+        for (const auto& strip : plate.strips) {
+            int strip_top = strip.y + strip.width;
+            if (strip_top < stock_width_) {
+                red_line_model_y.insert(strip_top);
+                int draw_y = offset_y + static_cast<int>((stock_width_ - strip_top) * scale);
+                painter.drawLine(stock_rect.left(), draw_y, stock_rect.right(), draw_y);
+            }
+        }
+    }
+
+    // 第二阶段切割线 (垂直蓝线，分隔同一条带内的子板)
+    QPen blue_pen(QColor(50, 100, 180), kLineWidth, Qt::SolidLine);
+    blue_pen.setCapStyle(Qt::FlatCap);
+    painter.setPen(blue_pen);
+
+    // 按条带分组收集子板右边界
+    std::map<int, std::vector<int>> strip_item_boundaries;
+    for (const auto& item : plate.items) {
+        int right_x = item.x + item.length;
+        if (right_x < stock_length_) {
+            strip_item_boundaries[item.strip_id].push_back(right_x);
+        }
+    }
+
+    // 对每个条带绘制垂直切割线
+    for (const auto& strip : plate.strips) {
+        auto it = strip_item_boundaries.find(strip.strip_id);
+        if (it == strip_item_boundaries.end()) continue;
+
+        // Y范围 (屏幕坐标)
+        int strip_top_y = offset_y + static_cast<int>((stock_width_ - strip.y - strip.width) * scale);
+        int strip_bottom_y = offset_y + static_cast<int>((stock_width_ - strip.y) * scale);
+
+        // 像素级避让: 蓝线端点内缩，不与红线相交
+        bool has_red_at_top = red_line_model_y.count(strip.y + strip.width) > 0;
+        bool has_red_at_bottom = red_line_model_y.count(strip.y) > 0;
+
+        if (has_red_at_top) {
+            strip_top_y += kLineHalfWidth;
+        }
+        if (has_red_at_bottom) {
+            strip_bottom_y -= kLineHalfWidth;
+        }
+
+        for (int x : it->second) {
+            int draw_x = offset_x + static_cast<int>(x * scale);
+            painter.drawLine(draw_x, strip_top_y, draw_x, strip_bottom_y);
+        }
+    }
+
+    // 恢复抗锯齿 (用于后续文字绘制)
+    painter.setRenderHint(QPainter::Antialiasing, true);
 
     // 绘制尺寸标注
     painter.setPen(Qt::darkGray);

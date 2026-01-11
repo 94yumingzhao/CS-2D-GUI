@@ -42,9 +42,7 @@ MainWindow::MainWindow(QWidget* parent)
     , solver_worker_(nullptr)
     , generator_thread_(nullptr)
     , generator_worker_(nullptr)
-    , is_running_(false)
-    , current_stock_index_(0)
-    , total_stock_count_(0) {
+    , is_running_(false) {
     SetupUi();
     SetupMenuBar();
     SetupConnections();
@@ -222,12 +220,6 @@ QWidget* MainWindow::CreateCuttingTab() {
     solution_path_edit_->setPlaceholderText(QString::fromUtf8("选择 JSON 解文件..."));
     control_layout->addWidget(solution_path_edit_, 1);
 
-    control_layout->addWidget(new QLabel(QString::fromUtf8("母板:")));
-    plate_combo_ = new QComboBox(tab);
-    plate_combo_->setMinimumWidth(100);
-    plate_combo_->setEnabled(false);
-    control_layout->addWidget(plate_combo_);
-
     layout->addLayout(control_layout);
 
     // ========== Bottom Visualization ==========
@@ -279,8 +271,6 @@ void MainWindow::SetupConnections() {
 
     // Cutting view tab connections
     connect(load_solution_button_, &QPushButton::clicked, this, &MainWindow::OnLoadSolution);
-    connect(plate_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::OnPlateSelected);
 
     // Setup solver worker thread
     solver_thread_ = new QThread(this);
@@ -330,24 +320,6 @@ void MainWindow::UpdateSolverUiState(bool is_running) {
         QString::fromUtf8("状态: 就绪"));
 }
 
-void MainWindow::UpdateCuttingNavigation() {
-    total_stock_count_ = cutting_view_widget_->GetPlateCount();
-    current_stock_index_ = cutting_view_widget_->GetCurrentPlateIndex();
-
-    // Update plate combo box
-    plate_combo_->blockSignals(true);
-    plate_combo_->clear();
-    for (int i = 0; i < total_stock_count_; i++) {
-        plate_combo_->addItem(QString::fromUtf8("母板 %1").arg(i + 1));
-    }
-    if (total_stock_count_ > 0) {
-        plate_combo_->setCurrentIndex(current_stock_index_);
-        plate_combo_->setEnabled(true);
-    } else {
-        plate_combo_->setEnabled(false);
-    }
-    plate_combo_->blockSignals(false);
-}
 
 // ============================================================================
 // Solver Tab Slots
@@ -462,7 +434,6 @@ void MainWindow::OnSolutionReady(const QString& jsonPath) {
     // Auto-load solution to cutting view
     cutting_view_widget_->LoadSolution(jsonPath);
     solution_path_edit_->setText(jsonPath);
-    UpdateCuttingNavigation();
 }
 
 void MainWindow::OnResultsReady(int optimalValue, double rootLB, double gap,
@@ -531,7 +502,6 @@ void MainWindow::OnLoadSolution() {
     if (!path.isEmpty()) {
         if (cutting_view_widget_->LoadSolution(path)) {
             solution_path_edit_->setText(path);
-            UpdateCuttingNavigation();
             statusBar()->showMessage(QString::fromUtf8("方案已加载"));
         } else {
             QMessageBox::warning(this, QString::fromUtf8("加载错误"),
@@ -540,22 +510,3 @@ void MainWindow::OnLoadSolution() {
     }
 }
 
-void MainWindow::OnPrevStock() {
-    cutting_view_widget_->ShowPrevPlate();
-    UpdateCuttingNavigation();
-}
-
-void MainWindow::OnNextStock() {
-    cutting_view_widget_->ShowNextPlate();
-    UpdateCuttingNavigation();
-}
-
-void MainWindow::OnZoomChanged(int index) {
-    // Reserved for zoom functionality
-    Q_UNUSED(index);
-}
-
-void MainWindow::OnPlateSelected(int index) {
-    cutting_view_widget_->ShowPlate(index);
-    current_stock_index_ = index;
-}

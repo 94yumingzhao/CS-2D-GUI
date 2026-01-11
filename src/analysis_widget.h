@@ -93,6 +93,8 @@ private:
     // 求解概要
     QLabel* solve_status_label_;
     QLabel* objective_label_;
+    QLabel* heuristic_label_;
+    QLabel* improvement_label_;
     QLabel* root_lb_label_;
     QLabel* final_lb_label_;
     QLabel* gap_label_;

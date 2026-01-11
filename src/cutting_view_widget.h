@@ -1,3 +1,11 @@
+// ============================================================================
+// 工程标准 (Engineering Standards)
+// - 坐标系: 左下角为原点
+// - 宽度(Width): 上下方向 (Y轴)
+// - 长度(Length): 左右方向 (X轴)
+// - 约束: 长度 >= 宽度
+// ============================================================================
+
 // cutting_view_widget.h - 切割方案可视化组件
 
 #ifndef CUTTING_VIEW_WIDGET_H_
@@ -11,6 +19,14 @@
 
 class QPushButton;
 class QLabel;
+class QComboBox;
+
+// 条带绘制信息
+struct StripRect {
+    int strip_id;    // 条带ID (从0开始)
+    int y;           // Y起始位置
+    int width;       // 条带宽度
+};
 
 // 子板绘制信息
 struct ItemRect {
@@ -18,12 +34,14 @@ struct ItemRect {
     int x, y;        // 左下角位置
     int width;       // 宽度
     int length;      // 长度
+    int strip_id;    // 所属条带ID
 };
 
 // 母板数据
 struct PlateData {
     int plate_id;
     double utilization;
+    std::vector<StripRect> strips;
     std::vector<ItemRect> items;
 };
 
@@ -52,6 +70,9 @@ public slots:
     void ShowNextPlate();
     void ShowPlate(int index);
 
+private slots:
+    void OnPlateComboChanged(int index);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
 
@@ -64,7 +85,7 @@ private:
     // UI 组件
     QPushButton* prev_button_;
     QPushButton* next_button_;
-    QLabel* plate_index_label_;
+    QComboBox* plate_combo_;
     QLabel* utilization_label_;
 
     // 数据
