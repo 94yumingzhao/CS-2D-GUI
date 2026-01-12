@@ -26,7 +26,7 @@
 
 CuttingViewWidget::CuttingViewWidget(QWidget* parent)
     : QWidget(parent)
-    , current_plate_index_(0)
+    , current_stock_index_(0)
     , stock_width_(0)
     , stock_length_(0) {
     SetupUi();
@@ -41,24 +41,24 @@ void CuttingViewWidget::SetupUi() {
     prev_button_ = new QPushButton("<", this);
     prev_button_->setFixedWidth(40);
     prev_button_->setEnabled(false);
-    connect(prev_button_, &QPushButton::clicked, this, &CuttingViewWidget::ShowPrevPlate);
+    connect(prev_button_, &QPushButton::clicked, this, &CuttingViewWidget::ShowPrevStock);
 
-    plate_combo_ = new QComboBox(this);
-    plate_combo_->setMinimumWidth(120);
-    plate_combo_->setEnabled(false);
-    connect(plate_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &CuttingViewWidget::OnPlateComboChanged);
+    stock_combo_ = new QComboBox(this);
+    stock_combo_->setMinimumWidth(120);
+    stock_combo_->setEnabled(false);
+    connect(stock_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &CuttingViewWidget::OnStockComboChanged);
 
     next_button_ = new QPushButton(">", this);
     next_button_->setFixedWidth(40);
     next_button_->setEnabled(false);
-    connect(next_button_, &QPushButton::clicked, this, &CuttingViewWidget::ShowNextPlate);
+    connect(next_button_, &QPushButton::clicked, this, &CuttingViewWidget::ShowNextStock);
 
     utilization_label_ = new QLabel(QString::fromUtf8("利用率: --"), this);
     utilization_label_->setAlignment(Qt::AlignRight);
 
     nav_layout->addWidget(prev_button_);
-    nav_layout->addWidget(plate_combo_);
+    nav_layout->addWidget(stock_combo_);
     nav_layout->addWidget(next_button_);
     nav_layout->addStretch();
     nav_layout->addWidget(utilization_label_);
@@ -96,17 +96,17 @@ bool CuttingViewWidget::LoadSolution(const QString& json_path) {
     }
 
     // 读取所有母板
-    plates_.clear();
-    QJsonArray plates_array = root["plates"].toArray();
-    for (const auto& plate_val : plates_array) {
-        QJsonObject plate_obj = plate_val.toObject();
+    stocks_.clear();
+    QJsonArray stocks_array = root["stocks"].toArray();
+    for (const auto& stock_val : stocks_array) {
+        QJsonObject stock_obj = stock_val.toObject();
 
-        PlateData plate;
-        plate.plate_id = plate_obj["plate_id"].toInt();
-        plate.utilization = plate_obj["utilization"].toDouble();
+        StockData stock;
+        stock.stock_id = stock_obj["stock_id"].toInt();
+        stock.utilization = stock_obj["utilization"].toDouble();
 
         // 读取条带信息
-        QJsonArray strips_array = plate_obj["strips"].toArray();
+        QJsonArray strips_array = stock_obj["strips"].toArray();
         for (const auto& strip_val : strips_array) {
             QJsonObject strip_obj = strip_val.toObject();
 
@@ -115,11 +115,11 @@ bool CuttingViewWidget::LoadSolution(const QString& json_path) {
             strip.y = strip_obj["y"].toInt();
             strip.width = strip_obj["width"].toInt();
 
-            plate.strips.push_back(strip);
+            stock.strips.push_back(strip);
         }
 
         // 读取子板信息
-        QJsonArray items_array = plate_obj["items"].toArray();
+        QJsonArray items_array = stock_obj["items"].toArray();
         for (const auto& item_val : items_array) {
             QJsonObject item_obj = item_val.toObject();
 
@@ -131,89 +131,89 @@ bool CuttingViewWidget::LoadSolution(const QString& json_path) {
             item.length = item_obj["length"].toInt();
             item.strip_id = item_obj["strip_id"].toInt(-1);  // 兼容旧格式
 
-            plate.items.push_back(item);
+            stock.items.push_back(item);
         }
 
-        plates_.push_back(plate);
+        stocks_.push_back(stock);
     }
 
-    current_plate_index_ = 0;
+    current_stock_index_ = 0;
     UpdateNavigation();
     update();
     return true;
 }
 
 void CuttingViewWidget::Clear() {
-    plates_.clear();
-    current_plate_index_ = 0;
+    stocks_.clear();
+    current_stock_index_ = 0;
     stock_width_ = 0;
     stock_length_ = 0;
     UpdateNavigation();
     update();
 }
 
-void CuttingViewWidget::ShowPrevPlate() {
-    if (current_plate_index_ > 0) {
-        current_plate_index_--;
+void CuttingViewWidget::ShowPrevStock() {
+    if (current_stock_index_ > 0) {
+        current_stock_index_--;
         UpdateNavigation();
         update();
-        emit PlateChanged(current_plate_index_, static_cast<int>(plates_.size()));
+        emit StockChanged(current_stock_index_, static_cast<int>(stocks_.size()));
     }
 }
 
-void CuttingViewWidget::ShowNextPlate() {
-    if (current_plate_index_ < static_cast<int>(plates_.size()) - 1) {
-        current_plate_index_++;
+void CuttingViewWidget::ShowNextStock() {
+    if (current_stock_index_ < static_cast<int>(stocks_.size()) - 1) {
+        current_stock_index_++;
         UpdateNavigation();
         update();
-        emit PlateChanged(current_plate_index_, static_cast<int>(plates_.size()));
+        emit StockChanged(current_stock_index_, static_cast<int>(stocks_.size()));
     }
 }
 
-void CuttingViewWidget::ShowPlate(int index) {
-    if (index >= 0 && index < static_cast<int>(plates_.size())) {
-        current_plate_index_ = index;
+void CuttingViewWidget::ShowStock(int index) {
+    if (index >= 0 && index < static_cast<int>(stocks_.size())) {
+        current_stock_index_ = index;
         UpdateNavigation();
         update();
-        emit PlateChanged(current_plate_index_, static_cast<int>(plates_.size()));
+        emit StockChanged(current_stock_index_, static_cast<int>(stocks_.size()));
     }
 }
 
 void CuttingViewWidget::UpdateNavigation() {
-    int total = static_cast<int>(plates_.size());
+    int total = static_cast<int>(stocks_.size());
 
-    prev_button_->setEnabled(current_plate_index_ > 0);
-    next_button_->setEnabled(current_plate_index_ < total - 1);
+    prev_button_->setEnabled(current_stock_index_ > 0);
+    next_button_->setEnabled(current_stock_index_ < total - 1);
 
     // 更新下拉框 (阻止信号循环)
-    plate_combo_->blockSignals(true);
-    if (plate_combo_->count() != total) {
-        plate_combo_->clear();
+    stock_combo_->blockSignals(true);
+    if (stock_combo_->count() != total) {
+        stock_combo_->clear();
         for (int i = 0; i < total; i++) {
-            plate_combo_->addItem(QString::fromUtf8("母板 %1/%2").arg(i + 1).arg(total));
+            stock_combo_->addItem(QString::fromUtf8("母板 %1/%2").arg(i + 1).arg(total));
         }
     }
     if (total > 0) {
-        plate_combo_->setCurrentIndex(current_plate_index_);
-        plate_combo_->setEnabled(true);
+        stock_combo_->setCurrentIndex(current_stock_index_);
+        stock_combo_->setEnabled(true);
         utilization_label_->setText(QString::fromUtf8("利用率: %1%")
-            .arg(plates_[current_plate_index_].utilization * 100, 0, 'f', 1));
+            .arg(stocks_[current_stock_index_].utilization * 100, 0, 'f', 1));
     } else {
-        plate_combo_->setEnabled(false);
+        stock_combo_->setEnabled(false);
         utilization_label_->setText(QString::fromUtf8("利用率: --"));
     }
-    plate_combo_->blockSignals(false);
+    stock_combo_->blockSignals(false);
 }
 
-void CuttingViewWidget::OnPlateComboChanged(int index) {
-    if (index >= 0 && index < static_cast<int>(plates_.size())) {
-        current_plate_index_ = index;
-        prev_button_->setEnabled(current_plate_index_ > 0);
-        next_button_->setEnabled(current_plate_index_ < static_cast<int>(plates_.size()) - 1);
+void CuttingViewWidget::OnStockComboChanged(int index) {
+    if (index >= 0 && index < static_cast<int>(stocks_.size())) {
+        current_stock_index_ = index;
+        prev_button_->setEnabled(current_stock_index_ > 0);
+        next_button_->setEnabled(current_stock_index_ < static_cast<int>(stocks_.size()) - 1);
         utilization_label_->setText(QString::fromUtf8("利用率: %1%")
-            .arg(plates_[current_plate_index_].utilization * 100, 0, 'f', 1));
+            .arg(stocks_[current_stock_index_].utilization * 100, 0, 'f', 1));
         update();
-        emit PlateChanged(current_plate_index_, static_cast<int>(plates_.size()));
+        emit StockChanged(current_stock_index_, static_cast<int>(stocks_.size()));
     }
 }
 
@@ -253,7 +253,7 @@ void CuttingViewWidget::paintEvent(QPaintEvent* event) {
     painter.setPen(QPen(Qt::gray, 1));
     painter.drawRect(draw_rect);
 
-    if (plates_.empty() || stock_width_ <= 0 || stock_length_ <= 0) {
+    if (stocks_.empty() || stock_width_ <= 0 || stock_length_ <= 0) {
         // 无数据时显示提示
         painter.setPen(Qt::gray);
         painter.drawText(draw_rect, Qt::AlignCenter,
@@ -262,10 +262,10 @@ void CuttingViewWidget::paintEvent(QPaintEvent* event) {
     }
 
     // 绘制当前母板
-    DrawPlate(painter, plates_[current_plate_index_], draw_rect);
+    DrawStock(painter, stocks_[current_stock_index_], draw_rect);
 }
 
-void CuttingViewWidget::DrawPlate(QPainter& painter, const PlateData& plate, const QRect& rect) {
+void CuttingViewWidget::DrawStock(QPainter& painter, const StockData& stock, const QRect& rect) {
     // 计算缩放比例 (保持宽高比)
     double scale_x = static_cast<double>(rect.width()) / stock_length_;
     double scale_y = static_cast<double>(rect.height()) / stock_width_;
@@ -283,7 +283,7 @@ void CuttingViewWidget::DrawPlate(QPainter& painter, const PlateData& plate, con
     painter.drawRect(stock_rect);
 
     // 绘制每个子板
-    for (const auto& item : plate.items) {
+    for (const auto& item : stock.items) {
         int draw_x = offset_x + static_cast<int>(item.x * scale);
         // Y 坐标翻转 (屏幕 Y 轴向下，切割 Y 轴向上)
         int draw_y = offset_y + static_cast<int>((stock_width_ - item.y - item.width) * scale);
@@ -322,12 +322,12 @@ void CuttingViewWidget::DrawPlate(QPainter& painter, const PlateData& plate, con
     std::set<int> red_line_model_y;
 
     // 第一阶段切割线 (水平红线，分隔条带)
-    if (!plate.strips.empty()) {
+    if (!stock.strips.empty()) {
         QPen red_pen(QColor(200, 50, 50), kLineWidth, Qt::SolidLine);
         red_pen.setCapStyle(Qt::FlatCap);
         painter.setPen(red_pen);
 
-        for (const auto& strip : plate.strips) {
+        for (const auto& strip : stock.strips) {
             int strip_top = strip.y + strip.width;
             if (strip_top < stock_width_) {
                 red_line_model_y.insert(strip_top);
@@ -344,7 +344,7 @@ void CuttingViewWidget::DrawPlate(QPainter& painter, const PlateData& plate, con
 
     // 按条带分组收集子板右边界
     std::map<int, std::vector<int>> strip_item_boundaries;
-    for (const auto& item : plate.items) {
+    for (const auto& item : stock.items) {
         int right_x = item.x + item.length;
         if (right_x < stock_length_) {
             strip_item_boundaries[item.strip_id].push_back(right_x);
@@ -352,7 +352,7 @@ void CuttingViewWidget::DrawPlate(QPainter& painter, const PlateData& plate, con
     }
 
     // 对每个条带绘制垂直切割线
-    for (const auto& strip : plate.strips) {
+    for (const auto& strip : stock.strips) {
         auto it = strip_item_boundaries.find(strip.strip_id);
         if (it == strip_item_boundaries.end()) continue;
 
@@ -400,8 +400,8 @@ void CuttingViewWidget::DrawPlate(QPainter& painter, const PlateData& plate, con
     painter.restore();
 }
 
-bool CuttingViewWidget::ExportCurrentPlateImage(const QString& path) {
-    if (plates_.empty()) return false;
+bool CuttingViewWidget::ExportCurrentStockImage(const QString& path) {
+    if (stocks_.empty()) return false;
 
     // 创建图片
     QPixmap pixmap(800, 600);
@@ -411,7 +411,7 @@ bool CuttingViewWidget::ExportCurrentPlateImage(const QString& path) {
     painter.setRenderHint(QPainter::Antialiasing);
 
     QRect draw_rect(20, 20, 760, 560);
-    DrawPlate(painter, plates_[current_plate_index_], draw_rect);
+    DrawStock(painter, stocks_[current_stock_index_], draw_rect);
 
     return pixmap.save(path);
 }

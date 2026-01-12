@@ -1,3 +1,11 @@
+// ============================================================================
+// 工程标准 (Engineering Standards)
+// - 坐标系: 左下角为原点
+// - 宽度(Width): 上下方向 (Y轴)
+// - 长度(Length): 左右方向 (X轴)
+// - 约束: 长度 >= 宽度
+// ============================================================================
+
 // solver_worker.cpp - Background Solver Worker (Subprocess) Implementation
 
 #include "solver_worker.h"
@@ -363,12 +371,12 @@ void SolverWorker::ParseResultsFromJson(const QString& jsonPath) {
     if (root.contains("summary")) {
         QJsonObject summary = root["summary"].toObject();
 
-        int num_plates = summary["num_plates"].toInt();
+        int num_stocks = summary["num_stocks"].toInt();
         double root_lb = summary["root_lb"].toDouble();
         double gap = summary["gap"].toDouble();
         int node_count = summary["node_count"].toInt(1);
         double utilization = summary["total_utilization"].toDouble();
 
-        emit ResultsReady(num_plates, root_lb, gap, node_count, utilization);
+        emit ResultsReady(num_stocks, root_lb, gap, node_count, utilization);
     }
 }

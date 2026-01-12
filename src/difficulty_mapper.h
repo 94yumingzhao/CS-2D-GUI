@@ -1,3 +1,11 @@
+// ============================================================================
+// 工程标准 (Engineering Standards)
+// - 坐标系: 左下角为原点
+// - 宽度(Width): 上下方向 (Y轴)
+// - 长度(Length): 左右方向 (X轴)
+// - 约束: 长度 >= 宽度
+// ============================================================================
+
 // difficulty_mapper.h - Difficulty Level to Generator Parameters Mapping
 //
 // Provides preset configurations for different difficulty levels
@@ -26,8 +34,8 @@ enum class ScaleLevel {
 struct GeneratorConfig {
     // Scale parameters
     int num_types = 20;         // Number of item types (5-100)
-    int stock_width = 200;      // Stock plate width W
-    int stock_length = 400;     // Stock plate length L
+    int stock_width = 200;      // Stock width W
+    int stock_length = 400;     // Stock length L
 
     // Size parameters (ratio relative to stock area)
     double min_size_ratio = 0.08;   // Min item area ratio (0.03-0.25)

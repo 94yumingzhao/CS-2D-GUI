@@ -38,8 +38,8 @@ struct ItemRect {
 };
 
 // 母板数据
-struct PlateData {
-    int plate_id;
+struct StockData {
+    int stock_id;
     double utilization;
     std::vector<StripRect> strips;
     std::vector<ItemRect> items;
@@ -56,22 +56,22 @@ public:
     void Clear();
 
     // 导出当前母板为图片
-    bool ExportCurrentPlateImage(const QString& path);
+    bool ExportCurrentStockImage(const QString& path);
 
     // 获取当前状态
-    int GetPlateCount() const { return static_cast<int>(plates_.size()); }
-    int GetCurrentPlateIndex() const { return current_plate_index_; }
+    int GetStockCount() const { return static_cast<int>(stocks_.size()); }
+    int GetCurrentStockIndex() const { return current_stock_index_; }
 
 signals:
-    void PlateChanged(int index, int total);
+    void StockChanged(int index, int total);
 
 public slots:
-    void ShowPrevPlate();
-    void ShowNextPlate();
-    void ShowPlate(int index);
+    void ShowPrevStock();
+    void ShowNextStock();
+    void ShowStock(int index);
 
 private slots:
-    void OnPlateComboChanged(int index);
+    void OnStockComboChanged(int index);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -80,17 +80,17 @@ private:
     void SetupUi();
     void UpdateNavigation();
     QColor GetItemColor(int item_type);
-    void DrawPlate(QPainter& painter, const PlateData& plate, const QRect& rect);
+    void DrawStock(QPainter& painter, const StockData& stock, const QRect& rect);
 
     // UI 组件
     QPushButton* prev_button_;
     QPushButton* next_button_;
-    QComboBox* plate_combo_;
+    QComboBox* stock_combo_;
     QLabel* utilization_label_;
 
     // 数据
-    std::vector<PlateData> plates_;
-    int current_plate_index_;
+    std::vector<StockData> stocks_;
+    int current_stock_index_;
     int stock_width_;
     int stock_length_;
 
